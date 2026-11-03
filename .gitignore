@@ -1,0 +1,32 @@
+# 运行数据（含登录凭据，绝不能提交）
+data/
+credential.json
+provider.json
+*.log
+
+# 依赖
+node_modules/
+package-lock.json
+
+# 逆向过程产物
+_research/
+deb_out/
+wincfg.txt
+captured.json
+*.deb
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 任何导出的凭据快照
+collector/tmp-*.json
+collector/credential*.json
+
+# 本地运维脚本（含服务器凭据）
+_ssh.js
+_put.js
+tmp_*.js
+tmp_*.map
+cdp-requests.json
+upstream-tap.log

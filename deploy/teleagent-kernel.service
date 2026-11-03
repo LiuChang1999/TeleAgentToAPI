@@ -1,0 +1,16 @@
+[Unit]
+Description=TeleAgent kernel (Linux)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/teleagent-proxy
+ExecStart=/usr/bin/node %h/teleagent-proxy/launcher/launcher.js
+Restart=always
+RestartSec=5
+StandardOutput=append:%h/teleagent-proxy/data/kernel.out.log
+StandardError=append:%h/teleagent-proxy/data/kernel.err.log
+
+[Install]
+WantedBy=default.target

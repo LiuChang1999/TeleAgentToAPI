@@ -1,0 +1,17 @@
+[Unit]
+Description=TeleAgent OpenAI-compatible gateway
+After=teleagent-kernel.service
+Wants=teleagent-kernel.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/teleagent-proxy
+Environment=TA_PORT=18787
+ExecStart=/usr/bin/node %h/teleagent-proxy/shim.js
+Restart=always
+RestartSec=5
+StandardOutput=append:%h/teleagent-proxy/data/shim.out.log
+StandardError=append:%h/teleagent-proxy/data/shim.err.log
+
+[Install]
+WantedBy=default.target

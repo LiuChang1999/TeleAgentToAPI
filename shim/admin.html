@@ -1,0 +1,885 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TeleAgent 网关控制台</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#ffffff; --border:#e4e6eb; --border-2:#d0d4da;
+    --text:#1c1e21; --text-2:#606770; --text-3:#8a8f98;
+    --accent:#0f6e56; --accent-2:#12876a; --accent-bg:#e1f5ee;
+    --danger:#a32d2d; --danger-bg:#fcebeb;
+    --warn:#854f0b; --warn-bg:#faeeda;
+    --ok:#0f6e56; --ok-bg:#e1f5ee;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --radius:12px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--text); font-size:14px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  button{font-family:inherit;font-size:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  input,select{font-family:inherit;font-size:inherit}
+  a{color:var(--accent);text-decoration:none}
+
+  /* 登录 */
+  #login{
+    position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:var(--bg);padding:20px;z-index:100;
+  }
+  .login-card{
+    width:100%;max-width:380px;background:var(--panel);border:1px solid var(--border);
+    border-radius:16px;padding:36px 32px;
+  }
+  .login-card h1{font-size:19px;font-weight:600;margin-bottom:6px}
+  .login-card p{color:var(--text-2);font-size:13px;margin-bottom:26px}
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:12.5px;color:var(--text-2);margin-bottom:6px}
+  .field input{
+    width:100%;padding:10px 12px;border:1px solid var(--border-2);border-radius:8px;
+    background:#fff;outline:none;transition:border-color .15s;
+  }
+  .field input:focus{border-color:var(--accent)}
+  .field textarea{
+    width:100%;padding:10px 12px;border:1px solid var(--border-2);border-radius:8px;
+    font-family:var(--mono);font-size:12.5px;line-height:1.6;resize:vertical;outline:none;
+    background:#fff;color:var(--text);
+  }
+  .field textarea:focus{border-color:var(--accent)}
+  code.mono{background:#f1f2f4;padding:1px 5px;border-radius:4px;font-size:12px}
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    padding:9px 16px;border-radius:8px;font-size:13.5px;font-weight:500;
+    background:var(--accent);color:#fff;transition:background .15s;
+  }
+  .btn:hover{background:var(--accent-2)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn.full{width:100%;padding:11px}
+  .btn.ghost{background:transparent;color:var(--text-2);border:1px solid var(--border-2)}
+  .btn.ghost:hover{background:#f2f3f5;color:var(--text)}
+  .btn.danger{background:transparent;color:var(--danger);border:1px solid #f0c8c8}
+  .btn.danger:hover{background:var(--danger-bg)}
+  .btn.sm{padding:5px 11px;font-size:12.5px;border-radius:6px}
+  .err{color:var(--danger);font-size:13px;margin-top:12px;min-height:20px}
+
+  /* 布局 */
+  #app{display:none;min-height:100vh;flex-direction:column}
+  header{
+    background:var(--panel);border-bottom:1px solid var(--border);
+    padding:0 24px;height:58px;display:flex;align-items:center;gap:16px;
+    position:sticky;top:0;z-index:20;
+  }
+  .logo{display:flex;align-items:center;gap:9px;font-weight:600;font-size:15px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#c4c7cc}
+  .dot.on{background:#1d9e75}
+  .dot.off{background:#e24b4a}
+  header .spacer{flex:1}
+  header .who{font-size:12.5px;color:var(--text-3)}
+
+  nav{
+    background:var(--panel);border-bottom:1px solid var(--border);
+    padding:0 24px;display:flex;gap:4px;position:sticky;top:58px;z-index:19;
+    overflow-x:auto;
+  }
+  nav button{
+    padding:11px 14px;font-size:13.5px;color:var(--text-2);border-bottom:2px solid transparent;
+    white-space:nowrap;transition:color .15s;
+  }
+  nav button:hover{color:var(--text)}
+  nav button.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+
+  main{padding:24px;max-width:1180px;width:100%;margin:0 auto;flex:1}
+  .page{display:none}
+  .page.active{display:block}
+
+  /* 卡片 */
+  .grid{display:grid;gap:14px}
+  .g4{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
+  .g2{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+  .card{
+    background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+    padding:18px 20px;
+  }
+  .card .label{font-size:12.5px;color:var(--text-3);margin-bottom:8px}
+  .card .value{font-size:24px;font-weight:600;letter-spacing:-.3px;line-height:1.2}
+  .card .sub{font-size:12.5px;color:var(--text-3);margin-top:6px}
+  .card.warn{border-color:#f0dcc0;background:var(--warn-bg)}
+  .card.warn .value{color:var(--warn)}
+  .card.bad{border-color:#f0c8c8;background:var(--danger-bg)}
+  .card.bad .value{color:var(--danger)}
+
+  .section-title{font-size:15px;font-weight:600;margin:26px 0 12px}
+  .section-title:first-child{margin-top:0}
+
+  /* 表格 */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{
+    text-align:left;font-weight:500;color:var(--text-3);font-size:12.5px;
+    padding:10px 12px;border-bottom:1px solid var(--border);
+  }
+  td{padding:12px;border-bottom:1px solid #f0f1f3;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fafbfc}
+  .mono{font-family:var(--mono);font-size:12.5px}
+  .muted{color:var(--text-3)}
+  .tag{
+    display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:500;
+  }
+  .tag.on{background:var(--ok-bg);color:var(--ok)}
+  .tag.off{background:#f1f2f4;color:var(--text-3)}
+  .tag.bad{background:var(--danger-bg);color:var(--danger)}
+
+  .bar{height:5px;background:#eceef1;border-radius:3px;overflow:hidden;margin-top:8px}
+  .bar > i{display:block;height:100%;background:var(--accent);border-radius:3px}
+  .bar > i.hot{background:#e24b4a}
+
+  /* 代码块 */
+  .code{
+    position:relative;background:#1c1e21;color:#e6e8eb;border-radius:10px;
+    padding:16px 18px;font-family:var(--mono);font-size:12.5px;line-height:1.7;
+    overflow-x:auto;white-space:pre;
+  }
+  .code .k{color:#7fd1b9}
+  .code .s{color:#e6c07b}
+  .code-wrap{position:relative;margin-bottom:14px}
+  .copy{
+    position:absolute;top:10px;right:10px;padding:4px 10px;border-radius:6px;
+    background:rgba(255,255,255,.12);color:#cfd3d8;font-size:12px;
+  }
+  .copy:hover{background:rgba(255,255,255,.22)}
+
+  /* 表单行 */
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .row input[type=text],.row input[type=number],.row input[type=password]{
+    padding:8px 11px;border:1px solid var(--border-2);border-radius:7px;background:#fff;outline:none;
+  }
+  .row input:focus{border-color:var(--accent)}
+
+  /* 弹窗 */
+  .modal{
+    position:fixed;inset:0;background:rgba(20,22,26,.45);display:none;
+    align-items:center;justify-content:center;padding:20px;z-index:200;
+  }
+  .modal.show{display:flex}
+  .modal-card{
+    background:var(--panel);border-radius:14px;width:100%;max-width:440px;padding:24px;
+  }
+  .modal-card h3{font-size:16px;font-weight:600;margin-bottom:18px}
+
+  .empty{text-align:center;padding:44px 0;color:var(--text-3);font-size:13.5px}
+
+  .kv{display:grid;grid-template-columns:110px 1fr;gap:10px 16px;font-size:13.5px}
+  .kv dt{color:var(--text-3)}
+  .kv dd{color:var(--text);word-break:break-all}
+
+  .toast{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#1c1e21;color:#fff;padding:10px 20px;border-radius:9px;font-size:13.5px;
+    opacity:0;transition:all .2s;pointer-events:none;z-index:300;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <form class="login-card" id="loginForm">
+    <h1>TeleAgent 网关</h1>
+    <p>请输入管理员密码进入控制台</p>
+    <div class="field">
+      <label>管理员密码</label>
+      <input type="password" id="pwd" autocomplete="current-password" autofocus>
+    </div>
+    <button class="btn full" type="submit" id="loginBtn">登录</button>
+    <div class="err" id="loginErr"></div>
+  </form>
+</div>
+
+<div id="app">
+  <header>
+    <div class="logo"><span class="dot" id="statusDot"></span>TeleAgent 网关</div>
+    <div class="spacer"></div>
+    <span class="who" id="whoText"></span>
+    <button class="btn ghost sm" onclick="logout()">退出</button>
+  </header>
+
+  <nav>
+    <button class="active" data-page="overview">概览</button>
+    <button data-page="accounts">账号</button>
+    <button data-page="keys">密钥与额度</button>
+    <button data-page="usage">调用方式</button>
+    <button data-page="logs">用量日志</button>
+    <button data-page="settings">设置</button>
+  </nav>
+
+  <main>
+    <div class="page active" id="page-overview">
+      <div class="grid g4" id="stats"></div>
+      <div class="card" style="margin-top:14px;background:#f8f9fa;border-color:var(--border)">
+        <div style="font-size:13px;color:var(--text-2);line-height:1.7">
+          <b>关于额度：</b>这里的「本地额度」是网关自己的计数器，用来限制每个 API Key 能调多少次，
+          <b>不是电信账号的真实积分余额</b>。TeleAgent 客户端不提供余额查询接口，真实余额请到
+          <a href="https://console.teleai.com.cn/accountInfo" target="_blank" rel="noopener">电信控制台</a>查看。
+        </div>
+      </div>
+      <div class="section-title">凭据状态</div>
+      <div class="card">
+        <dl class="kv" id="credInfo"></dl>
+      </div>
+      <div class="section-title">可用模型</div>
+      <div class="card" style="padding:6px 8px">
+        <table><thead><tr><th>模型 ID</th><th>名称</th><th>上下文</th><th>额度系数</th></tr></thead>
+        <tbody id="modelRows"></tbody></table>
+      </div>
+    </div>
+
+    <div class="page" id="page-accounts">
+      <div class="section-title">当前账号</div>
+      <div class="card" id="activeAccCard" style="margin-bottom:8px"></div>
+
+      <div class="section-title">全部账号</div>
+      <div class="card" style="padding:6px 8px;overflow-x:auto">
+        <table>
+          <thead><tr><th>账号</th><th>状态</th><th>租户</th><th>凭据有效期</th><th>请求数</th><th>累计 Tokens</th><th>累计额度</th><th style="width:180px">操作</th></tr></thead>
+          <tbody id="accRows"></tbody>
+        </table>
+      </div>
+
+      <div class="section-title">导入账号</div>
+
+      <div class="card" style="margin-bottom:14px">
+        <div style="font-size:14px;font-weight:500;margin-bottom:6px">方式一：一键推送（推荐）</div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:12px">
+          在已登录 TeleAgent 的 Windows 机器上，于项目目录执行下面这条命令，
+          自动读取本机登录态并推送到服务器，无需复制任何 token。
+        </div>
+        <div class="code-wrap">
+          <div class="code" id="pushCmd"></div>
+          <button class="copy" onclick="copyEl('pushCmd')">复制</button>
+        </div>
+        <div style="font-size:12.5px;color:var(--text-3)">
+          命令里的 &lt;管理员密码&gt; 换成你登录本后台用的密码。重复导入同一账号会被自动识别。
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="font-size:14px;font-weight:500;margin-bottom:6px">方式二：粘贴凭据</div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:14px">
+          如果 Windows 机器连不到服务器，可以先用
+          <code class="mono">node collector/export.js credential.json</code>
+          导出文件，再把内容粘贴到这里。
+        </div>
+        <div class="field"><label>账号名称（可留空，默认用用户名）</label><input type="text" id="accName" placeholder="例如：主账号"></div>
+        <div class="field">
+          <label>凭据 JSON</label>
+          <textarea id="accJson" rows="6" placeholder='{"token":"...","deviceId":"...","installId":"...","exp":"...","ownerDir":"..."}'></textarea>
+        </div>
+        <button class="btn ghost" onclick="importAccount()">导入</button>
+      </div>
+    </div>
+
+    <div class="page" id="page-keys">
+      <div class="row" style="justify-content:space-between;margin-bottom:16px">
+        <div class="section-title" style="margin:0">API 密钥</div>
+        <button class="btn" onclick="openCreate()">+ 新建密钥</button>
+      </div>
+      <div class="card" style="padding:6px 8px">
+        <table>
+          <thead><tr><th>名称</th><th>密钥</th><th style="width:190px">本地额度</th><th>请求数</th><th>状态</th><th style="width:150px">操作</th></tr></thead>
+          <tbody id="keyRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="page" id="page-usage">
+      <div class="section-title">接口地址</div>
+      <div class="code-wrap">
+        <div class="code" id="baseUrlCode"></div>
+        <button class="copy" onclick="copyEl('baseUrlCode')">复制</button>
+      </div>
+      <div class="section-title">curl</div>
+      <div class="code-wrap">
+        <div class="code" id="curlCode"></div>
+        <button class="copy" onclick="copyEl('curlCode')">复制</button>
+      </div>
+      <div class="section-title">Python（openai SDK）</div>
+      <div class="code-wrap">
+        <div class="code" id="pyCode"></div>
+        <button class="copy" onclick="copyEl('pyCode')">复制</button>
+      </div>
+      <div class="section-title">Node.js</div>
+      <div class="code-wrap">
+        <div class="code" id="nodeCode"></div>
+        <button class="copy" onclick="copyEl('nodeCode')">复制</button>
+      </div>
+      <div class="card" style="margin-top:18px;background:var(--warn-bg);border-color:#f0dcc0">
+        <div style="font-size:13.5px;color:var(--warn)">
+          说明：内核按 agent 语义执行，每次请求会携带约 13.8K 系统提示词 tokens，计入本地额度消耗。
+          多轮对话是把 messages 压平成单段文本传给模型，不是原生多轮。
+        </div>
+      </div>
+    </div>
+
+    <div class="page" id="page-logs">
+      <div class="row" style="justify-content:space-between;margin-bottom:16px">
+        <div class="section-title" style="margin:0">最近请求</div>
+        <button class="btn ghost sm" onclick="loadLogs()">刷新</button>
+      </div>
+      <div class="card" style="padding:6px 8px;overflow-x:auto">
+        <table>
+          <thead><tr><th>时间</th><th>账号</th><th>密钥</th><th>模型</th><th>Tokens</th><th>额度</th><th>耗时</th><th>来源</th><th>结果</th></tr></thead>
+          <tbody id="logRows"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="page" id="page-settings">
+      <div class="section-title">修改管理员密码</div>
+      <div class="card">
+        <div class="field"><label>当前密码</label><input type="password" id="pwdOld"></div>
+        <div class="field"><label>新密码（至少 6 位）</label><input type="password" id="pwdNew"></div>
+        <button class="btn" onclick="changePwd()">保存</button>
+      </div>
+      <div class="section-title">服务信息</div>
+      <div class="card"><dl class="kv" id="svcInfo"></dl></div>
+    </div>
+  </main>
+</div>
+
+<div class="modal" id="createModal">
+  <div class="modal-card">
+    <h3>新建 API 密钥</h3>
+    <div class="field"><label>名称</label><input type="text" id="newName" placeholder="例如：生产环境"></div>
+    <div class="field"><label>本地额度上限</label><input type="number" id="newQuota" value="1000000" min="0"></div>
+    <div class="row" style="justify-content:flex-end;margin-top:20px">
+      <button class="btn ghost" onclick="closeCreate()">取消</button>
+      <button class="btn" onclick="createKey()">创建</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let state = { overview: null, keys: [], logs: [] };
+let currentKey = '';
+
+/* ---------- 基础 ---------- */
+async function api(path, opts = {}) {
+  const r = await fetch(path, {
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  if (r.status === 401 && !path.includes('/login')) {
+    showLogin();
+    throw new Error('unauthorized');
+  }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+// 统一的复制实现：HTTP 环境下 navigator.clipboard 不可用，必须走 execCommand 兜底
+function copyText(text, okMsg) {
+  if (!text) return toast('没有可复制的内容');
+  const done = () => toast(okMsg || '已复制');
+
+  if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => legacyCopy(text, done));
+    return;
+  }
+  legacyCopy(text, done);
+}
+
+function legacyCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.top = '0';
+  ta.style.left = '-9999px';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, text.length);
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch (e) {
+    ok = false;
+  }
+  document.body.removeChild(ta);
+  if (ok) done();
+  else toast('复制失败，请手动选中复制');
+}
+
+function copyEl(id) {
+  const el = document.getElementById(id);
+  if (!el) return toast('找不到内容');
+  // textContent 不受 display:none 影响，比 innerText 稳
+  copyText(el.textContent, '已复制');
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+
+function fmtNum(n) {
+  if (n == null) return '-';
+  return Number(n).toLocaleString('zh-CN');
+}
+
+function maskId(id) {
+  if (!id) return '-';
+  const s = String(id);
+  return s.length > 8 ? s.slice(0, 4) + '****' + s.slice(-4) : s;
+}
+
+function fmtTime(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  const p = (x) => String(x).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/* ---------- 登录 ---------- */
+function showLogin() {
+  document.getElementById('login').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('loginBtn');
+  const err = document.getElementById('loginErr');
+  btn.disabled = true; btn.textContent = '登录中…'; err.textContent = '';
+  try {
+    await api('/admin/api/login', {
+      method: 'POST',
+      body: JSON.stringify({ password: document.getElementById('pwd').value }),
+    });
+    await boot();
+  } catch (ex) {
+    err.textContent = ex.message === '密码错误' ? '密码错误，请重试' : ex.message;
+  } finally {
+    btn.disabled = false; btn.textContent = '登录';
+  }
+});
+
+async function logout() {
+  await fetch('/admin/api/logout', { credentials: 'same-origin' });
+  showLogin();
+}
+
+/* ---------- 导航 ---------- */
+document.querySelectorAll('nav button').forEach((b) => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    document.querySelectorAll('.page').forEach((p) => p.classList.remove('active'));
+    document.getElementById('page-' + b.dataset.page).classList.add('active');
+    if (b.dataset.page === 'logs') loadLogs();
+    if (b.dataset.page === 'accounts') loadAccounts();
+  });
+});
+
+/* ---------- 启动 ---------- */
+async function boot() {
+  const ov = await api('/admin/api/overview');
+  state.overview = ov;
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('statusDot').className = 'dot ' + (ov.kernel.ok ? 'on' : 'off');
+  document.getElementById('whoText').textContent = ov.kernel.ok ? '内核运行中' : '内核未响应';
+  renderOverview(ov);
+  await loadKeys();
+  await loadAccounts();
+  renderUsage(ov);
+}
+
+function renderOverview(ov) {
+  const q = ov.quota;
+  const pct = q.total ? Math.min(100, (q.used / q.total) * 100) : 0;
+  const d = ov.credential.daysLeft;
+  const credClass = d == null ? '' : d <= 3 ? 'bad' : d <= 7 ? 'warn' : '';
+
+  const acc = ov.account;
+  document.getElementById('stats').innerHTML = `
+    <div class="card">
+      <div class="label">当前消耗账号</div>
+      <div class="value" style="font-size:19px">${esc(acc ? (acc.userName || acc.name) : '未配置')}</div>
+      <div class="sub">${acc ? (maskId(acc.accountId) + ' · ' + (acc.daysLeft == null ? '有效期未知' : '剩余 ' + acc.daysLeft + ' 天')) : '请到账号页导入'}</div>
+    </div>
+    <div class="card">
+      <div class="label">内核状态</div>
+      <div class="value" style="color:${ov.kernel.ok ? 'var(--ok)' : 'var(--danger)'}">
+        ${ov.kernel.ok ? '正常' : '离线'}
+      </div>
+      <div class="sub">${ov.kernel.latencyMs != null ? ov.kernel.latencyMs + ' ms' : '无响应'}</div>
+    </div>
+    <div class="card">
+      <div class="label">今日请求</div>
+      <div class="value">${fmtNum(ov.today.requests)}</div>
+      <div class="sub">${fmtNum(ov.today.tokens)} tokens</div>
+    </div>
+    <div class="card">
+      <div class="label">本地额度余额</div>
+      <div class="value">${fmtNum(q.remaining)}</div>
+      <div class="sub">本地计数 · 已用 ${fmtNum(q.used)} / ${fmtNum(q.total)}</div>
+      <div class="bar"><i class="${pct > 85 ? 'hot' : ''}" style="width:${pct}%"></i></div>
+    </div>
+  `;
+
+  document.getElementById('credInfo').innerHTML = `
+    <dt>设备号</dt><dd class="mono">${esc(ov.credential.deviceId || '-')}</dd>
+    <dt>安装号</dt><dd class="mono">${esc(ov.credential.installId || '-')}</dd>
+    <dt>账号目录</dt><dd class="mono">${esc(ov.credential.ownerDir || '-')}</dd>
+    <dt>有效期至</dt><dd>${ov.credential.exp ? new Date(ov.credential.exp).toLocaleString('zh-CN') : '-'}</dd>
+    <dt>内核地址</dt><dd class="mono">${esc(ov.kernel.url)}</dd>
+  `;
+
+  document.getElementById('modelRows').innerHTML = ov.models.map((m) => `
+    <tr>
+      <td class="mono">${esc(m.id)}</td>
+      <td>${esc(m.name)}</td>
+      <td class="muted">${fmtNum(m.context)}</td>
+      <td class="muted">× ${m.weight}</td>
+    </tr>`).join('');
+
+  const pushEl = document.getElementById('pushCmd');
+  if (pushEl) {
+    pushEl.textContent = `node collector/push.js ${ov.endpoint} <管理员密码>`;
+  }
+
+  document.getElementById('svcInfo').innerHTML = `
+    <dt>接口地址</dt><dd class="mono">${esc(ov.endpoint)}</dd>
+    <dt>内核地址</dt><dd class="mono">${esc(ov.kernel.url)}</dd>
+    <dt>密钥总数</dt><dd>${ov.keys.count} 个（启用 ${ov.keys.enabled} 个）</dd>
+  `;
+}
+
+/* ---------- 账号 ---------- */
+let accState = { accounts: [], active: null, runningAccountId: null, switching: false };
+
+async function loadAccounts() {
+  accState = await api('/admin/api/accounts');
+  renderAccounts();
+}
+
+function renderAccounts() {
+  const list = accState.accounts || [];
+  const active = list.find((a) => a.id === accState.active) || list[0];
+
+  if (!active) {
+    document.getElementById('activeAccCard').innerHTML = '<div class="empty">还没有账号</div>';
+    document.getElementById('accRows').innerHTML = '';
+    return;
+  }
+
+  const d = active.daysLeft;
+  const cls = d == null ? '' : d <= 3 ? 'bad' : d <= 7 ? 'warn' : '';
+  document.getElementById('activeAccCard').innerHTML = `
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div>
+        <div style="font-size:19px;font-weight:600;margin-bottom:6px">
+          ${esc(active.userName || active.name)}
+          <span class="tag on" style="margin-left:8px;vertical-align:middle">正在消耗</span>
+        </div>
+        <div style="font-size:13px;color:var(--text-2)">
+          账号 <span class="mono">${esc(maskId(active.accountId))}</span>
+          · 租户 <span class="mono">${esc(active.tenant || '-')}</span>
+          · 设备 <span class="mono">${esc(active.deviceId || '-')}</span>
+        </div>
+        <div style="font-size:12.5px;color:var(--text-3);margin-top:5px">
+          该账号累计 ${fmtNum(active.requests)} 次请求 / ${fmtNum(active.tokens)} tokens
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div class="label" style="font-size:12px;color:var(--text-3)">凭据剩余</div>
+        <div style="font-size:22px;font-weight:600;color:${cls === 'bad' ? 'var(--danger)' : cls === 'warn' ? 'var(--warn)' : 'var(--ok)'}">
+          ${d == null ? '未知' : d + ' 天'}
+        </div>
+        <div style="font-size:12px;color:var(--text-3)">${active.exp ? active.exp.slice(0, 10) + ' 到期' : ''}</div>
+      </div>
+    </div>`;
+
+  document.getElementById('accRows').innerHTML = list.map((a) => {
+    const dd = a.daysLeft;
+    const dcls = dd == null ? '' : dd <= 3 ? 'bad' : dd <= 7 ? 'warn' : '';
+    const dcolor = dcls === 'bad' ? 'var(--danger)' : dcls === 'warn' ? 'var(--warn)' : 'var(--text)';
+    return `<tr>
+      <td>
+        <div style="font-weight:500">${esc(a.userName || a.name)}</div>
+        <div class="muted mono" style="font-size:11.5px">${esc(maskId(a.accountId))}</div>
+      </td>
+      <td>${a.active ? '<span class="tag on">当前</span>' : '<span class="tag off">备用</span>'}</td>
+      <td class="mono muted">${esc(a.tenant || '-')}</td>
+      <td style="color:${dcolor}">${dd == null ? '-' : dd + ' 天'}</td>
+      <td class="muted">${fmtNum(a.requests)}</td>
+      <td class="muted">${fmtNum(a.tokens)}</td>
+      <td>${fmtNum(a.cost)}</td>
+      <td>
+        ${a.active
+          ? '<button class="btn ghost sm" disabled>使用中</button>'
+          : `<button class="btn sm" onclick="activateAccount('${a.id}', this)">切换到此</button>`}
+        <button class="btn ghost sm" onclick="renameAccount('${a.id}')">改名</button>
+        <button class="btn danger sm" onclick="delAccount('${a.id}')">删除</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function activateAccount(id, btn) {
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '切换中…';
+  }
+  toast('正在切换账号，内核重启约需 3-10 秒');
+  try {
+    const r = await api('/admin/api/accounts/' + id + '/activate', { method: 'POST' });
+    toast(r.already ? '该账号已在使用' : '切换完成（' + Math.round((r.ms || 0) / 100) / 10 + 's）');
+    await loadAccounts();
+    const ov = await api('/admin/api/overview');
+    state.overview = ov;
+    renderOverview(ov);
+  } catch (e) {
+    toast('切换失败：' + e.message);
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '切换到此';
+    }
+  }
+}
+
+async function importAccount() {
+  const name = document.getElementById('accName').value.trim();
+  const raw = document.getElementById('accJson').value.trim();
+  if (!raw) return toast('请粘贴凭据 JSON');
+  try {
+    await api('/admin/api/accounts', {
+      method: 'POST',
+      body: JSON.stringify({ name, credential: raw }),
+    });
+    document.getElementById('accName').value = '';
+    document.getElementById('accJson').value = '';
+    await loadAccounts();
+    toast('账号已导入');
+  } catch (e) {
+    toast('导入失败：' + e.message);
+  }
+}
+
+async function renameAccount(id) {
+  const a = accState.accounts.find((x) => x.id === id);
+  const name = prompt('账号名称', a ? a.name : '');
+  if (name === null) return;
+  await api('/admin/api/accounts/' + id, { method: 'PATCH', body: JSON.stringify({ name }) });
+  await loadAccounts();
+  toast('已改名');
+}
+
+async function delAccount(id) {
+  if (!confirm('删除这个账号？只是从列表移除，不影响其他账号。')) return;
+  try {
+    await api('/admin/api/accounts/' + id, { method: 'DELETE' });
+    await loadAccounts();
+    toast('已删除');
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+/* ---------- 密钥 ---------- */
+async function loadKeys() {
+  const data = await api('/admin/api/keys');
+  state.keys = data.keys;
+  document.getElementById('keyRows').innerHTML = state.keys.map((k) => {
+    const pct = k.quota ? Math.min(100, (k.used / k.quota) * 100) : 0;
+    const over = k.used >= k.quota;
+    return `<tr>
+      <td>${esc(k.name)}</td>
+      <td class="mono muted">${esc(k.key.slice(0, 12))}…${esc(k.key.slice(-4))}</td>
+      <td>
+        <div style="font-size:12.5px">${fmtNum(k.used)} / ${fmtNum(k.quota)}</div>
+        <div class="bar"><i class="${over ? 'hot' : ''}" style="width:${pct}%"></i></div>
+      </td>
+      <td class="muted">${fmtNum(k.requests || 0)}</td>
+      <td><span class="tag ${k.enabled ? (over ? 'bad' : 'on') : 'off'}">
+        ${k.enabled ? (over ? '已用尽' : '启用') : '停用'}</span></td>
+      <td>
+        <button class="btn ghost sm" onclick="copyKey('${k.key}')">复制</button>
+        <button class="btn ghost sm" onclick="editKey('${k.id}')">编辑</button>
+        <button class="btn danger sm" onclick="delKey('${k.id}')">删除</button>
+      </td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty">还没有密钥</td></tr>`;
+
+  if (state.keys.length) currentKey = state.keys[0].key;
+  renderUsage(state.overview);
+}
+
+function copyKey(k) {
+  copyText(k, '密钥已复制');
+}
+
+function openCreate() {
+  document.getElementById('createModal').classList.add('show');
+  document.getElementById('newName').value = '';
+  document.getElementById('newQuota').value = 1000000;
+  document.getElementById('newName').focus();
+}
+function closeCreate() {
+  document.getElementById('createModal').classList.remove('show');
+}
+
+async function createKey() {
+  const name = document.getElementById('newName').value.trim() || '未命名';
+  const quota = Number(document.getElementById('newQuota').value) || 0;
+  await api('/admin/api/keys', { method: 'POST', body: JSON.stringify({ name, quota }) });
+  closeCreate();
+  await loadKeys();
+  toast('密钥已创建');
+}
+
+async function editKey(id) {
+  const k = state.keys.find((x) => x.id === id);
+  if (!k) return;
+  const name = prompt('名称', k.name);
+  if (name === null) return;
+  const quotaStr = prompt('本地额度上限（0 表示不限制）', String(k.quota));
+  if (quotaStr === null) return;
+  const quota = Number(quotaStr) || 0;
+  await api('/admin/api/keys/' + id, { method: 'PATCH', body: JSON.stringify({ name, quota }) });
+  await loadKeys();
+  toast('已保存');
+}
+
+async function delKey(id) {
+  if (!confirm('确定删除这个密钥？删除后无法恢复。')) return;
+  await api('/admin/api/keys/' + id, { method: 'DELETE' });
+  await loadKeys();
+  toast('已删除');
+}
+
+/* ---------- 调用示例 ---------- */
+function renderUsage(ov) {
+  if (!ov) return;
+  const base = ov.endpoint || location.origin;
+  const key = currentKey || 'sk-ta-你的密钥';
+  const model = (ov.models && ov.models[0] && ov.models[0].id) || 'chat-pro';
+
+  document.getElementById('baseUrlCode').textContent = base + '/v1';
+
+  document.getElementById('curlCode').innerHTML = hl(`curl ${base}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${key}" \\
+  -d '{
+    "model": "${model}",
+    "messages": [{"role": "user", "content": "你好"}],
+    "stream": false
+  }'`);
+
+  document.getElementById('pyCode').innerHTML = hl(`from openai import OpenAI
+
+client = OpenAI(
+    base_url="${base}/v1",
+    api_key="${key}",
+)
+
+resp = client.chat.completions.create(
+    model="${model}",
+    messages=[{"role": "user", "content": "你好"}],
+)
+print(resp.choices[0].message.content)`);
+
+  document.getElementById('nodeCode').innerHTML = hl(`import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "${base}/v1",
+  apiKey: "${key}",
+});
+
+const resp = await client.chat.completions.create({
+  model: "${model}",
+  messages: [{ role: "user", content: "你好" }],
+});
+console.log(resp.choices[0].message.content);`);
+}
+
+function hl(code) {
+  return esc(code)
+    .replace(/(&quot;[^&]*?&quot;)/g, '<span class="s">$1</span>')
+    .replace(/^(\s*)(curl|from|import|const|let|print|client|resp)/gm, '$1<span class="k">$2</span>');
+}
+
+/* ---------- 日志 ---------- */
+async function loadLogs() {
+  const data = await api('/admin/api/logs?limit=100');
+  state.logs = data.logs;
+  document.getElementById('logRows').innerHTML = state.logs.map((l) => `
+    <tr>
+      <td class="muted" style="white-space:nowrap">${fmtTime(l.ts)}</td>
+      <td>${esc(l.accountName || '-')}</td>
+      <td>${esc(l.keyName || '-')}</td>
+      <td class="mono">${esc(l.model || '-')}</td>
+      <td class="muted">${l.totalTokens ? fmtNum(l.totalTokens) : '-'}</td>
+      <td>${l.cost ? fmtNum(l.cost) : '-'}</td>
+      <td class="muted">${l.ms ? l.ms + ' ms' : '-'}</td>
+      <td class="muted mono">${esc(l.ip || '-')}</td>
+      <td>${l.ok ? '<span class="tag on">成功</span>' : '<span class="tag bad">失败</span>'}</td>
+    </tr>`).join('') || `<tr><td colspan="9" class="empty">暂无请求记录</td></tr>`;
+}
+
+/* ---------- 设置 ---------- */
+async function changePwd() {
+  const oldP = document.getElementById('pwdOld').value;
+  const next = document.getElementById('pwdNew').value;
+  try {
+    await api('/admin/api/password', {
+      method: 'POST',
+      body: JSON.stringify({ old: oldP, next }),
+    });
+    toast('密码已修改，请重新登录');
+    setTimeout(showLogin, 900);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+/* ---------- 初始化 ---------- */
+(async () => {
+  try {
+    await boot();
+  } catch {
+    showLogin();
+  }
+})();
+
+setInterval(async () => {
+  if (document.getElementById('app').style.display === 'none') return;
+  try {
+    const ov = await api('/admin/api/overview');
+    state.overview = ov;
+    document.getElementById('statusDot').className = 'dot ' + (ov.kernel.ok ? 'on' : 'off');
+    document.getElementById('whoText').textContent = ov.kernel.ok ? '内核运行中' : '内核未响应';
+    renderOverview(ov);
+  } catch {}
+}, 30000);
+</script>
+</body>
+</html>

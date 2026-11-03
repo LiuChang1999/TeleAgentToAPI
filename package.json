@@ -1,0 +1,29 @@
+{
+  "name": "teleagent-to-api",
+  "version": "1.0.0",
+  "description": "把中国电信 TeleAgent 的模型能力转成标准 OpenAI 兼容 API，带多账号、密钥、额度与用量统计",
+  "main": "shim/server.js",
+  "scripts": {
+    "start": "node shim/server.js",
+    "launcher": "node launcher/launcher.js",
+    "export": "node collector/export.js",
+    "verify": "node tools/verify.js",
+    "bench": "node tools/bench.js",
+    "bench:stream": "node tools/stream-bench.js"
+  },
+  "keywords": [
+    "teleagent",
+    "openai",
+    "proxy",
+    "gateway",
+    "teleai"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ssh2": "^1.17.0",
+    "ws": "^8.22.1"
+  }
+}
