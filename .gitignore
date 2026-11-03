@@ -30,3 +30,5 @@ tmp_*.js
 tmp_*.map
 cdp-requests.json
 upstream-tap.log
+tmp_*
+cdp-requests.json
