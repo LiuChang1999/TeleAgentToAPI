@@ -252,30 +252,44 @@
 
       <div class="card" style="margin-bottom:14px">
         <div style="font-size:14px;font-weight:500;margin-bottom:6px">方式一：一键推送（推荐）</div>
-        <div style="font-size:13px;color:var(--text-2);margin-bottom:12px">
-          在已登录 TeleAgent 的 Windows 机器上，于项目目录执行下面这条命令，
-          自动读取本机登录态并推送到服务器，无需复制任何 token。
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:10px">
+          在已登录 TeleAgent 的 Windows 上，下载
+          <a class="mono" href="/collector/push.js" download>push.js</a> 后执行：
         </div>
         <div class="code-wrap">
           <div class="code" id="pushCmd"></div>
           <button class="copy" onclick="copyEl('pushCmd')">复制</button>
         </div>
-        <div style="font-size:12.5px;color:var(--text-3)">
-          命令里的 &lt;管理员密码&gt; 换成你登录本后台用的密码。重复导入同一账号会被自动识别。
+        <div style="font-size:12.5px;color:var(--text-3);margin-top:6px">
+          把 &lt;管理员密码&gt; 换成登录本后台的密码，脚本会自动读取本机登录态并推送到服务器，
+          重复导入同一账号会被自动识别。
         </div>
       </div>
 
       <div class="card">
-        <div style="font-size:14px;font-weight:500;margin-bottom:6px">方式二：粘贴凭据</div>
-        <div style="font-size:13px;color:var(--text-2);margin-bottom:14px">
-          如果 Windows 机器连不到服务器，可以先用
-          <code class="mono">node collector/export.js credential.json</code>
-          导出文件，再把内容粘贴到这里。
+        <div style="font-size:14px;font-weight:500;margin-bottom:8px">方式二：粘贴凭据</div>
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:10px">
+          如果 Windows 连不到服务器，下载
+          <a class="mono" href="/collector/export.js" download>export.js</a>，在已登录的客户端上执行：
         </div>
-        <div class="field"><label>账号名称（可留空，默认用用户名）</label><input type="text" id="accName" placeholder="例如：主账号"></div>
+        <div class="code-wrap" style="margin-bottom:12px">
+          <div class="code" id="exportCmd">node export.js credential.json</div>
+          <button class="copy" onclick="copyEl('exportCmd')">复制</button>
+        </div>
+        <div style="font-size:12.5px;color:var(--text-3);margin-bottom:14px">
+          把生成的 credential.json 内容整段粘到下面。需要 Node 18+，脚本只读，不修改客户端数据。
+        </div>
         <div class="field">
-          <label>凭据 JSON</label>
-          <textarea id="accJson" rows="6" placeholder='{"token":"...","deviceId":"...","installId":"...","exp":"...","ownerDir":"..."}'></textarea>
+          <label>账号名称（可留空，默认用用户名）</label>
+          <input type="text" id="accName" placeholder="例如：主账号">
+        </div>
+        <div class="field">
+          <label>备注（可选，方便区分是谁的号）</label>
+          <input type="text" id="accNote" placeholder="例如：市场部 张工 / 备用号">
+        </div>
+        <div class="field">
+          <label>credential.json 内容</label>
+          <textarea id="accJson" rows="6" placeholder='{"token":"...","deviceId":"...","installId":"...","exp":"..."}'></textarea>
         </div>
         <button class="btn ghost" onclick="importAccount()">导入</button>
       </div>
@@ -343,6 +357,30 @@
         <div class="field"><label>新密码（至少 6 位）</label><input type="password" id="pwdNew"></div>
         <button class="btn" onclick="changePwd()">保存</button>
       </div>
+      <div class="section-title">监听地址</div>
+      <div class="card">
+        <div style="font-size:13px;color:var(--text-2);margin-bottom:14px">
+          网关监听在哪个地址和端口。0.0.0.0 表示所有网卡；改成 127.0.0.1 则只允许本机访问（适合放在 nginx / cloudflare tunnel 后面）。
+          保存后立即生效，当前页面会断开，需要用新地址重新打开。
+        </div>
+        <div class="row" style="gap:12px;align-items:flex-end">
+          <div class="field" style="flex:1;margin:0">
+            <label>监听地址</label>
+            <input type="text" id="netBind" placeholder="0.0.0.0">
+          </div>
+          <div class="field" style="width:130px;margin:0">
+            <label>端口</label>
+            <input type="text" id="netPort" placeholder="18787">
+          </div>
+        </div>
+        <div id="netHint" style="font-size:12px;color:var(--text-3);margin:10px 0 4px"></div>
+        <div id="netTest" style="font-size:12.5px;margin:6px 0 12px;min-height:18px"></div>
+        <div class="row" style="gap:10px">
+          <button class="btn ghost" onclick="testNetwork()">测试</button>
+          <button class="btn" onclick="saveNetwork()">保存并应用</button>
+        </div>
+      </div>
+
       <div class="section-title">服务信息</div>
       <div class="card"><dl class="kv" id="svcInfo"></dl></div>
     </div>
@@ -495,6 +533,7 @@ document.querySelectorAll('nav button').forEach((b) => {
     document.getElementById('page-' + b.dataset.page).classList.add('active');
     if (b.dataset.page === 'logs') loadLogs();
     if (b.dataset.page === 'accounts') loadAccounts();
+    if (b.dataset.page === 'settings') loadNetwork();
   });
 });
 
@@ -563,7 +602,7 @@ function renderOverview(ov) {
 
   const pushEl = document.getElementById('pushCmd');
   if (pushEl) {
-    pushEl.textContent = `node collector/push.js ${ov.endpoint} <管理员密码>`;
+    pushEl.textContent = `node push.js ${ov.endpoint} <管理员密码>`;
   }
 
   document.getElementById('svcInfo').innerHTML = `
@@ -624,8 +663,9 @@ function renderAccounts() {
     const dcolor = dcls === 'bad' ? 'var(--danger)' : dcls === 'warn' ? 'var(--warn)' : 'var(--text)';
     return `<tr>
       <td>
-        <div style="font-weight:500">${esc(a.userName || a.name)}</div>
-        <div class="muted mono" style="font-size:11.5px">${esc(maskId(a.accountId))}</div>
+        <div style="font-weight:500">${esc(a.name || a.userName)}</div>
+        <div class="muted mono" style="font-size:11.5px">${a.phone ? esc(a.phone) + ' - ' : ''}${esc(maskId(a.accountId))}</div>
+        ${a.note ? '<div class="muted" style="font-size:11.5px">备注：' + esc(a.note) + '</div>' : ''}
       </td>
       <td>${a.active ? '<span class="tag on">当前</span>' : '<span class="tag off">备用</span>'}</td>
       <td class="mono muted">${esc(a.tenant || '-')}</td>
@@ -638,6 +678,7 @@ function renderAccounts() {
           ? '<button class="btn ghost sm" disabled>使用中</button>'
           : `<button class="btn sm" onclick="activateAccount('${a.id}', this)">切换到此</button>`}
         <button class="btn ghost sm" onclick="renameAccount('${a.id}')">改名</button>
+        <button class="btn ghost sm" onclick="editNote('${a.id}')">备注</button>
         <button class="btn danger sm" onclick="delAccount('${a.id}')">删除</button>
       </td>
     </tr>`;
@@ -668,19 +709,34 @@ async function activateAccount(id, btn) {
 
 async function importAccount() {
   const name = document.getElementById('accName').value.trim();
+  const note = document.getElementById('accNote').value.trim();
   const raw = document.getElementById('accJson').value.trim();
-  if (!raw) return toast('请粘贴凭据 JSON');
+  if (!raw) return toast('请先粘贴内容');
   try {
     await api('/admin/api/accounts', {
       method: 'POST',
-      body: JSON.stringify({ name, credential: raw }),
+      body: JSON.stringify({ text: raw, name, note }),
     });
     document.getElementById('accName').value = '';
+    document.getElementById('accNote').value = '';
     document.getElementById('accJson').value = '';
     await loadAccounts();
     toast('账号已导入');
   } catch (e) {
     toast('导入失败：' + e.message);
+  }
+}
+
+async function editNote(id) {
+  const a = accState.accounts.find((x) => x.id === id);
+  const note = prompt('备注（留空则清除）', a ? a.note || '' : '');
+  if (note === null) return;
+  try {
+    await api('/admin/api/accounts/' + id, { method: 'PATCH', body: JSON.stringify({ note }) });
+    await loadAccounts();
+    toast('备注已保存');
+  } catch (e) {
+    toast(e.message);
   }
 }
 
@@ -846,6 +902,68 @@ async function loadLogs() {
 }
 
 /* ---------- 设置 ---------- */
+let netState = null;
+
+async function loadNetwork() {
+  try {
+    const n = await api('/admin/api/network');
+    netState = n;
+    document.getElementById('netBind').value = n.bind;
+    document.getElementById('netPort').value = String(n.port);
+    document.getElementById('netBind').disabled = n.envLocked;
+    document.getElementById('netPort').disabled = n.envLocked;
+    document.getElementById('netHint').textContent = n.envLocked
+      ? '当前由环境变量 TA_HOST / TA_PORT 指定，页面无法修改。'
+      : '本机可用地址：' + (n.addresses || []).join('  ·  ');
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function testNetwork() {
+  const bind = document.getElementById('netBind').value.trim();
+  const port = Number(document.getElementById('netPort').value);
+  const box = document.getElementById('netTest');
+  if (!bind) return toast('请填写监听地址');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return toast('端口需为 1-65535');
+  box.style.color = 'var(--text-3)';
+  box.textContent = '正在测试…';
+  try {
+    const r = await api('/admin/api/network/test', {
+      method: 'POST',
+      body: JSON.stringify({ bind, port }),
+    });
+    box.style.color = 'var(--ok)';
+    box.textContent = r.message;
+  } catch (e) {
+    box.style.color = 'var(--danger)';
+    box.textContent = '测试未通过：' + e.message;
+  }
+}
+
+async function saveNetwork() {
+  const bind = document.getElementById('netBind').value.trim();
+  const port = Number(document.getElementById('netPort').value);
+  if (!bind) return toast('请填写监听地址');
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return toast('端口需为 1-65535');
+  if (!confirm('保存后立即切换监听地址，当前页面会断开。继续？')) return;
+  try {
+    const r = await api('/admin/api/network', {
+      method: 'POST',
+      body: JSON.stringify({ bind, port }),
+    });
+    if (r.unchanged) return toast('配置未变化');
+    const proto = location.protocol;
+    const host = bind === '0.0.0.0' || bind === '::' ? location.hostname : bind;
+    toast('已切换到 ' + r.bind + ':' + r.port + '，正在跳转…');
+    setTimeout(() => {
+      location.href = proto + '//' + host + ':' + r.port + '/admin';
+    }, 1200);
+  } catch (e) {
+    toast('保存失败：' + e.message);
+  }
+}
+
 async function changePwd() {
   const oldP = document.getElementById('pwdOld').value;
   const next = document.getElementById('pwdNew').value;

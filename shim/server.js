@@ -14,6 +14,8 @@
  */
 const http = require('http');
 const fs = require('fs');
+const os = require('os');
+const net = require('net');
 const path = require('path');
 const crypto = require('crypto');
 
@@ -23,7 +25,9 @@ const ADMIN_DB = path.join(DATA_DIR, 'admin.json');
 const ADMIN_HTML = path.join(ROOT, 'admin.html');
 const CRED_FILE = path.join(ROOT, 'credential.json');
 
-const PORT = Number(process.env.TA_PORT || 18787);
+// 监听配置：环境变量优先，其次 data/admin.json 的 network 设置
+let PORT = Number(process.env.TA_PORT || 18787);
+let BIND = process.env.TA_HOST || '0.0.0.0';
 
 // ---------- 运行期凭据 ----------
 function loadRuntimeAuth() {
@@ -96,6 +100,31 @@ if (!db) {
   console.log('');
 }
 
+if (!process.env.TA_PORT && db.network && db.network.port) {
+  PORT = Number(db.network.port) || PORT;
+}
+if (!process.env.TA_HOST && db.network && db.network.bind) {
+  BIND = String(db.network.bind);
+}
+
+function localAddresses() {
+  const out = new Set(['0.0.0.0', '::', '::1', '127.0.0.1', 'localhost']);
+  const ifs = os.networkInterfaces();
+  for (const name of Object.keys(ifs)) {
+    for (const a of ifs[name] || []) {
+      if (a.family === 'IPv4') out.add(a.address);
+    }
+  }
+  return [...out];
+}
+
+function isValidBind(host) {
+  if (!host) return false;
+  if (host === 'localhost') return true;
+  if (!net.isIP(host)) return false;
+  return localAddresses().includes(host);
+}
+
 // ---------- 账号管理 ----------
 const ACCOUNTS_FILE = path.join(DATA_DIR, 'accounts.json');
 const { execFile } = require('child_process');
@@ -124,6 +153,16 @@ function decodeToken(token) {
   } catch {
     return {};
   }
+}
+
+// 从多个字段里猜手机号（账号目录、userId、用户名都可能带）
+function pickPhone() {
+  for (const v of arguments) {
+    if (!v) continue;
+    const m = String(v).match(/(?:^|\D)(1[3-9]\d{9})(?:\D|$)/);
+    if (m) return m[1];
+  }
+  return null;
 }
 
 function saveAccounts(data) {
@@ -593,13 +632,22 @@ async function handleAdmin(req, res, url) {
   }
 
   if (p === '/admin/api/overview') {
-    const cred = (() => {
-      try {
-        return JSON.parse(fs.readFileSync(CRED_FILE, 'utf8'));
-      } catch {
-        return {};
-      }
-    })();
+    // 优先用当前激活账号的凭据，没有账号时才退回 credential.json
+    const activeAcc = activeAccount();
+    const cred = activeAcc
+      ? {
+          deviceId: activeAcc.deviceId,
+          installId: activeAcc.installId,
+          ownerDir: activeAcc.ownerDir,
+          exp: activeAcc.exp,
+        }
+      : (() => {
+          try {
+            return JSON.parse(fs.readFileSync(CRED_FILE, 'utf8'));
+          } catch {
+            return {};
+          }
+        })();
     const exp = cred.exp ? new Date(cred.exp).getTime() : 0;
     const daysLeft = exp ? Math.floor((exp - Date.now()) / 86400000) : null;
 
@@ -640,6 +688,8 @@ async function handleAdmin(req, res, url) {
         return {
           id: a.id,
           name: a.name,
+          note: a.note || '',
+          phone: a.phone || pickPhone(a.phone, a.userName, a.accountId, a.ownerDir),
           userName: a.userName || null,
           accountId: a.accountId || null,
           tenant: a.tenant || null,
@@ -654,6 +704,8 @@ async function handleAdmin(req, res, url) {
         return {
           id: a.id,
           name: a.name,
+          note: a.note || '',
+          phone: a.phone || pickPhone(a.phone, a.userName, a.accountId, a.ownerDir),
           userName: a.userName || null,
           accountId: a.accountId || null,
           tenant: a.tenant || null,
@@ -734,6 +786,8 @@ async function handleAdmin(req, res, url) {
         return {
           id: a.id,
           name: a.name,
+          note: a.note || '',
+          phone: a.phone || pickPhone(a.phone, a.userName, a.accountId, a.ownerDir),
           userName: a.userName || null,
           accountId: a.accountId || null,
           tenant: a.tenant || null,
@@ -759,7 +813,7 @@ async function handleAdmin(req, res, url) {
     } catch {
       return sendJson(res, 400, { error: 'invalid json' });
     }
-    let c = body.credential;
+    let c = body.credential !== undefined ? body.credential : body;
     if (typeof c === 'string') {
       try {
         c = JSON.parse(c);
@@ -767,20 +821,25 @@ async function handleAdmin(req, res, url) {
         return sendJson(res, 400, { error: '凭据 JSON 解析失败' });
       }
     }
-    c = c || body;
+    if (!c || typeof c !== 'object') return sendJson(res, 400, { error: '缺少凭据' });
     if (!c.token || !c.deviceId || !c.installId) {
       return sendJson(res, 400, { error: '凭据缺少 token / deviceId / installId' });
     }
+    const phone = pickPhone(c.ownerDir, c.userName, c.userId, c.phone);
     if (accDB.accounts.some((a) => a.token === c.token)) {
       return sendJson(res, 409, { error: '这个账号已经导入过了' });
     }
     const claims = decodeToken(c.token);
     const acc = {
       id: 'acc_' + crypto.randomBytes(6).toString('hex'),
-      name: String(body.name || claims.userName || c.ownerDir || '未命名账号').slice(0, 40),
+      name: String(
+        body.name || claims.userName || c.userName || phone || c.ownerDir || '未命名账号'
+      ).slice(0, 40),
+      note: String(body.note || '').slice(0, 100),
+      phone: phone || pickPhone(claims.userName, claims.accountId) || null,
       userName: claims.userName || c.userName || null,
       accountId: claims.accountId || c.accountId || null,
-      tenant: claims.tenant || c.tenant || null,
+      tenant: claims.tenant || c.tenant || claims.tenant || c.tenantId || null,
       token: c.token,
       deviceId: c.deviceId,
       installId: c.installId,
@@ -806,6 +865,7 @@ async function handleAdmin(req, res, url) {
         return sendJson(res, 400, { error: 'invalid json' });
       }
       if (body.name !== undefined) acc.name = String(body.name).slice(0, 40);
+      if (body.note !== undefined) acc.note = String(body.note).slice(0, 100);
       saveAccounts(accDB);
       return sendJson(res, 200, { ok: true });
     }
@@ -834,6 +894,110 @@ async function handleAdmin(req, res, url) {
     return sendJson(res, 200, { logs: db.logs.slice(0, limit) });
   }
 
+  if (p === '/admin/api/network' && req.method === 'GET') {
+    return sendJson(res, 200, {
+      bind: BIND,
+      port: PORT,
+      envLocked: Boolean(process.env.TA_PORT || process.env.TA_HOST),
+      addresses: localAddresses(),
+    });
+  }
+
+  if (p === '/admin/api/network/test' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJson(req);
+    } catch {
+      return sendJson(res, 400, { error: 'invalid json' });
+    }
+    const bind = String(body.bind || '').trim();
+    const port = Number(body.port);
+    if (!isValidBind(bind)) {
+      return sendJson(res, 400, {
+        error: '不是本机地址，可选：' + localAddresses().join('、'),
+      });
+    }
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return sendJson(res, 400, { error: '端口需为 1-65535 的整数' });
+    }
+    if (port !== PORT) {
+      const free = await probePort(bind, port);
+      if (!free) return sendJson(res, 400, { error: '端口 ' + port + ' 已被占用或被系统拒绝' });
+    }
+    const notes = [];
+    if (bind === '127.0.0.1' || bind === '::1' || bind === 'localhost') {
+      notes.push('只有本机能访问，外部需要经 nginx 或 tunnel 转发');
+    } else if (bind === '0.0.0.0' || bind === '::') {
+      notes.push('所有网卡可达');
+    } else {
+      notes.push('只监听 ' + bind + ' 这张网卡');
+    }
+    if (port === PORT && bind === BIND) notes.push('与当前配置一致，无需保存');
+    else if (port === PORT) notes.push('端口与当前相同，切换时由本进程让出再占回');
+    return sendJson(res, 200, {
+      ok: true,
+      message: '地址可用、端口可绑定 — ' + bind + ':' + port + '；' + notes.join('；'),
+    });
+  }
+
+  if (p === '/admin/api/network' && req.method === 'POST') {
+    let body;
+    try {
+      body = await readJson(req);
+    } catch {
+      return sendJson(res, 400, { error: 'invalid json' });
+    }
+    if (process.env.TA_PORT || process.env.TA_HOST) {
+      return sendJson(res, 400, {
+        error: '当前监听地址由环境变量 TA_HOST / TA_PORT 指定，去掉环境变量后才能在这里修改',
+      });
+    }
+    if (rebinding) return sendJson(res, 409, { error: '正在切换监听地址，请稍候' });
+
+    const bind = String(body.bind || '').trim();
+    const port = Number(body.port);
+    if (!isValidBind(bind)) {
+      return sendJson(res, 400, {
+        error: '监听地址必须是本机地址，可选：' + localAddresses().join('、'),
+      });
+    }
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return sendJson(res, 400, { error: '端口需为 1-65535 的整数' });
+    }
+    if (bind === BIND && port === PORT) {
+      return sendJson(res, 200, { ok: true, bind, port, unchanged: true });
+    }
+    if (port !== PORT) {
+      const free = await probePort(bind, port);
+      if (!free) return sendJson(res, 400, { error: '端口 ' + port + ' 已被占用或被拒绝' });
+    }
+
+    const old = { bind: BIND, port: PORT };
+    db.network = { bind, port };
+    saveDB(db);
+    BIND = bind;
+    PORT = port;
+
+    // 先把响应发出去，再切换监听，避免自己把自己的回包掐断
+    sendJson(res, 200, { ok: true, bind, port, previous: old });
+    setTimeout(() => {
+      rebindServer(bind, port).catch(async (e) => {
+        console.error('[network] 切换监听失败，回滚', e && e.message);
+        BIND = old.bind;
+        PORT = old.port;
+        db.network = old;
+        saveDB(db);
+        try {
+          await rebindServer(old.bind, old.port);
+        } catch (e2) {
+          console.error('[network] 回滚也失败，进程将退出', e2 && e2.message);
+          process.exit(1);
+        }
+      });
+    }, 200);
+    return;
+  }
+
   if (p === '/admin/api/password' && req.method === 'POST') {
     let body;
     try {
@@ -860,6 +1024,21 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname.startsWith('/admin')) {
       await handleAdmin(req, res, url);
       return;
+    }
+
+    // 客户端脚本下载：/collector/export.js、/collector/push.js
+    if (url.pathname.startsWith('/collector/')) {
+      const name = path.basename(url.pathname);
+      if (!/^(export|push)\.js$/.test(name)) return sendJson(res, 404, { error: 'not found' });
+      const file = path.join(ROOT, '..', 'collector', name);
+      if (!fs.existsSync(file)) return sendJson(res, 404, { error: 'not found' });
+      const buf = fs.readFileSync(file);
+      res.writeHead(200, {
+        'Content-Type': 'application/javascript; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="' + name + '"',
+        'Content-Length': buf.length,
+      });
+      return res.end(buf);
     }
 
     if (url.pathname === '/healthz') {
@@ -1124,8 +1303,42 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[teleagent-openai] listening on :${PORT} -> ${KERNEL}`);
+// ---------- 监听地址切换 ----------
+let rebinding = false;
+
+function probePort(host, port) {
+  return new Promise((resolve) => {
+    const s = net.createServer();
+    s.once('error', () => resolve(false));
+    s.once('listening', () => s.close(() => resolve(true)));
+    s.listen(port, host);
+  });
+}
+
+async function rebindServer(host, port) {
+  rebinding = true;
+  try {
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    await new Promise((resolve) => server.close(() => resolve()));
+    await new Promise((resolve, reject) => {
+      const onErr = (e) => {
+        server.removeListener('error', onErr);
+        reject(e);
+      };
+      server.once('error', onErr);
+      server.listen(port, host, () => {
+        server.removeListener('error', onErr);
+        console.log('[network] 已切换到 ' + host + ':' + port);
+        resolve();
+      });
+    });
+  } finally {
+    rebinding = false;
+  }
+}
+
+server.listen(PORT, BIND, () => {
+  console.log(`[teleagent-openai] listening on ${BIND}:${PORT} -> ${KERNEL}`);
   console.log(`[teleagent-openai] admin: http://<ip>:${PORT}/admin`);
   if (!creds().key) console.warn('[teleagent-openai] 会话密钥缺失，内核调用会失败');
 });

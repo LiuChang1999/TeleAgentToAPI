@@ -32,3 +32,10 @@ cdp-requests.json
 upstream-tap.log
 tmp_*
 cdp-requests.json
+
+# 提取的厂商内核与发布产物（走 Release，不进 git）
+bin/
+dist/
+
+# 网关数据目录软链
+shim/data
